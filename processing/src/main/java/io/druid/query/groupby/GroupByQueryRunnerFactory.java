@@ -1,20 +1,20 @@
 /*
- * Druid - a distributed column store.
- * Copyright (C) 2012, 2013  Metamarkets Group Inc.
+ * Licensed to Metamarkets Group Inc. (Metamarkets) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. Metamarkets licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package io.druid.query.groupby;
@@ -22,7 +22,6 @@ package io.druid.query.groupby;
 import com.google.common.base.Function;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
-import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -30,15 +29,18 @@ import com.google.inject.Inject;
 import com.metamx.common.ISE;
 import com.metamx.common.Pair;
 import com.metamx.common.guava.Accumulator;
-import com.metamx.common.guava.ExecutorExecutingSequence;
 import com.metamx.common.guava.Sequence;
 import com.metamx.common.guava.Sequences;
 import com.metamx.common.logger.Logger;
+import io.druid.collections.StupidPool;
 import io.druid.data.input.Row;
+import io.druid.guice.annotations.Global;
 import io.druid.query.AbstractPrioritizedCallable;
+import io.druid.query.BaseQuery;
 import io.druid.query.ConcatQueryRunner;
 import io.druid.query.GroupByParallelQueryRunner;
 import io.druid.query.Query;
+import io.druid.query.QueryContextKeys;
 import io.druid.query.QueryInterruptedException;
 import io.druid.query.QueryRunner;
 import io.druid.query.QueryRunnerFactory;
@@ -48,8 +50,9 @@ import io.druid.segment.Segment;
 import io.druid.segment.StorageAdapter;
 import io.druid.segment.incremental.IncrementalIndex;
 
-import java.util.List;
-import java.util.concurrent.Callable;
+import java.nio.ByteBuffer;
+import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -60,25 +63,27 @@ import java.util.concurrent.TimeoutException;
  */
 public class GroupByQueryRunnerFactory implements QueryRunnerFactory<Row, GroupByQuery>
 {
+  private static final Logger log = new Logger(GroupByQueryRunnerFactory.class);
   private final GroupByQueryEngine engine;
   private final QueryWatcher queryWatcher;
   private final Supplier<GroupByQueryConfig> config;
   private final GroupByQueryQueryToolChest toolChest;
-
-  private static final Logger log = new Logger(GroupByQueryRunnerFactory.class);
+  private final StupidPool<ByteBuffer> computationBufferPool;
 
   @Inject
   public GroupByQueryRunnerFactory(
       GroupByQueryEngine engine,
       QueryWatcher queryWatcher,
       Supplier<GroupByQueryConfig> config,
-      GroupByQueryQueryToolChest toolChest
+      GroupByQueryQueryToolChest toolChest,
+      @Global StupidPool<ByteBuffer> computationBufferPool
   )
   {
     this.engine = engine;
     this.queryWatcher = queryWatcher;
     this.config = config;
     this.toolChest = toolChest;
+    this.computationBufferPool = computationBufferPool;
   }
 
   @Override
@@ -105,17 +110,18 @@ public class GroupByQueryRunnerFactory implements QueryRunnerFactory<Row, GroupB
                   return new QueryRunner<Row>()
                   {
                     @Override
-                    public Sequence<Row> run(final Query<Row> query)
+                    public Sequence<Row> run(final Query<Row> query, final Map<String, Object> responseContext)
                     {
                       final GroupByQuery queryParam = (GroupByQuery) query;
                       final Pair<IncrementalIndex, Accumulator<IncrementalIndex, Row>> indexAccumulatorPair = GroupByQueryHelper
                           .createIndexAccumulatorPair(
                               queryParam,
-                              config.get()
+                              config.get(),
+                              computationBufferPool
                           );
-                      final Pair<List, Accumulator<List, Row>> bySegmentAccumulatorPair = GroupByQueryHelper.createBySegmentAccumulatorPair();
-                      final int priority = query.getContextPriority(0);
-                      final boolean bySegment = query.getContextBySegment(false);
+                      final Pair<Queue, Accumulator<Queue, Row>> bySegmentAccumulatorPair = GroupByQueryHelper.createBySegmentAccumulatorPair();
+                      final int priority = BaseQuery.getContextPriority(query, 0);
+                      final boolean bySegment = BaseQuery.getContextBySegment(query, false);
 
                       final ListenableFuture<Void> future = queryExecutor.submit(
                           new AbstractPrioritizedCallable<Void>(priority)
@@ -124,13 +130,14 @@ public class GroupByQueryRunnerFactory implements QueryRunnerFactory<Row, GroupB
                             public Void call() throws Exception
                             {
                               if (bySegment) {
-                                input.run(queryParam)
+                                input.run(queryParam, responseContext)
                                      .accumulate(
                                          bySegmentAccumulatorPair.lhs,
                                          bySegmentAccumulatorPair.rhs
                                      );
                               } else {
-                                input.run(query).accumulate(indexAccumulatorPair.lhs, indexAccumulatorPair.rhs);
+                                input.run(query, responseContext)
+                                     .accumulate(indexAccumulatorPair.lhs, indexAccumulatorPair.rhs);
                               }
 
                               return null;
@@ -139,7 +146,7 @@ public class GroupByQueryRunnerFactory implements QueryRunnerFactory<Row, GroupB
                       );
                       try {
                         queryWatcher.registerQuery(query, future);
-                        final Number timeout = query.getContextValue("timeout", (Number) null);
+                        final Number timeout = query.getContextValue(QueryContextKeys.TIMEOUT, (Number) null);
                         if (timeout == null) {
                           future.get();
                         } else {
@@ -149,15 +156,15 @@ public class GroupByQueryRunnerFactory implements QueryRunnerFactory<Row, GroupB
                       catch (InterruptedException e) {
                         log.warn(e, "Query interrupted, cancelling pending results, query id [%s]", query.getId());
                         future.cancel(true);
-                        throw new QueryInterruptedException("Query interrupted");
+                        throw new QueryInterruptedException(e);
                       }
                       catch (CancellationException e) {
-                        throw new QueryInterruptedException("Query cancelled");
+                        throw new QueryInterruptedException(e);
                       }
                       catch (TimeoutException e) {
                         log.info("Query timeout, cancelling pending results for query id [%s]", query.getId());
                         future.cancel(true);
-                        throw new QueryInterruptedException("Query timeout");
+                        throw new QueryInterruptedException(e);
                       }
                       catch (ExecutionException e) {
                         throw Throwables.propagate(e.getCause());
@@ -167,7 +174,7 @@ public class GroupByQueryRunnerFactory implements QueryRunnerFactory<Row, GroupB
                         return Sequences.simple(bySegmentAccumulatorPair.lhs);
                       }
 
-                      return Sequences.simple(indexAccumulatorPair.lhs.iterableWithPostAggregations(null));
+                      return Sequences.simple(indexAccumulatorPair.lhs.iterableWithPostAggregations(null, query.isDescending()));
                     }
                   };
                 }
@@ -175,7 +182,8 @@ public class GroupByQueryRunnerFactory implements QueryRunnerFactory<Row, GroupB
           )
       );
     } else {
-      return new GroupByParallelQueryRunner(queryExecutor, config, queryWatcher, queryRunners);
+
+      return new GroupByParallelQueryRunner(queryExecutor, config, queryWatcher, computationBufferPool, queryRunners);
     }
   }
 
@@ -197,7 +205,7 @@ public class GroupByQueryRunnerFactory implements QueryRunnerFactory<Row, GroupB
     }
 
     @Override
-    public Sequence<Row> run(Query<Row> input)
+    public Sequence<Row> run(Query<Row> input, Map<String, Object> responseContext)
     {
       if (!(input instanceof GroupByQuery)) {
         throw new ISE("Got a [%s] which isn't a %s", input.getClass(), GroupByQuery.class);

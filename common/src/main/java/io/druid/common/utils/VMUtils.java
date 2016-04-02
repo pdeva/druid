@@ -1,28 +1,61 @@
 /*
- * Druid - a distributed column store.
- * Copyright (C) 2012, 2013, 2014  Metamarkets Group Inc.
+ * Licensed to Metamarkets Group Inc. (Metamarkets) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. Metamarkets licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package io.druid.common.utils;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.lang.reflect.InvocationTargetException;
 
 public class VMUtils
 {
+  private static final ThreadMXBean THREAD_MX_BEAN = ManagementFactory.getThreadMXBean();
+
+  public static boolean isThreadCpuTimeEnabled()
+  {
+    return THREAD_MX_BEAN.isThreadCpuTimeSupported() && THREAD_MX_BEAN.isThreadCpuTimeEnabled();
+  }
+
+  public static long safeGetThreadCpuTime()
+  {
+    if (!isThreadCpuTimeEnabled()) {
+      return 0L;
+    } else {
+      return getCurrentThreadCpuTime();
+    }
+  }
+
+  /**
+   * Returns the total CPU time for current thread.
+   * This method should be called after verifying that cpu time measurement for current thread is supported by JVM
+   *
+   * @return total CPU time for the current thread in nanoseconds.
+   *
+   * @throws java.lang.UnsupportedOperationException if the Java
+   *                                                 virtual machine does not support CPU time measurement for
+   *                                                 the current thread.
+   */
+  public static long getCurrentThreadCpuTime()
+  {
+    return THREAD_MX_BEAN.getCurrentThreadCpuTime();
+  }
+
   public static long getMaxDirectMemory() throws UnsupportedOperationException
   {
     try {
@@ -30,7 +63,12 @@ public class VMUtils
       Object maxDirectMemoryObj = vmClass.getMethod("maxDirectMemory").invoke(null);
 
       if (maxDirectMemoryObj == null || !(maxDirectMemoryObj instanceof Number)) {
-        throw new UnsupportedOperationException(String.format("Cannot determine maxDirectMemory from [%s]", maxDirectMemoryObj));
+        throw new UnsupportedOperationException(
+            String.format(
+                "Cannot determine maxDirectMemory from [%s]",
+                maxDirectMemoryObj
+            )
+        );
       } else {
         return ((Number) maxDirectMemoryObj).longValue();
       }
@@ -42,10 +80,10 @@ public class VMUtils
       throw new UnsupportedOperationException("VM.maxDirectMemory doesn't exist, cannot do memory check.", e);
     }
     catch (InvocationTargetException e) {
-      throw new RuntimeException("static method shouldn't throw this", e);
+      throw new UnsupportedOperationException("static method shouldn't throw this", e);
     }
     catch (IllegalAccessException e) {
-      throw new RuntimeException("public method, shouldn't throw this", e);
+      throw new UnsupportedOperationException("public method, shouldn't throw this", e);
     }
   }
 }

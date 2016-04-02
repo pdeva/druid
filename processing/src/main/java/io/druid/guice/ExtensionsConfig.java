@@ -1,26 +1,25 @@
 /*
- * Druid - a distributed column store.
- * Copyright (C) 2012, 2013  Metamarkets Group Inc.
+ * Licensed to Metamarkets Group Inc. (Metamarkets) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. Metamarkets licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package io.druid.guice;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.collect.ImmutableList;
 
 import javax.validation.constraints.NotNull;
 import java.util.List;
@@ -34,38 +33,40 @@ public class ExtensionsConfig
   private boolean searchCurrentClassloader = true;
 
   @JsonProperty
-  @NotNull
-  private List<String> coordinates = ImmutableList.of();
+  private String directory = "extensions";
 
   @JsonProperty
-  @NotNull
-  private String localRepository = String.format("%s/%s", System.getProperty("user.home"), ".m2/repository");
+  private String hadoopDependenciesDir = "hadoop-dependencies";
 
   @JsonProperty
-  @NotNull
-  private List<String> remoteRepositories = ImmutableList.of(
-      "http://repo1.maven.org/maven2/",
-      "https://metamx.artifactoryonline.com/metamx/pub-libs-releases-local"
-  );
+  private String hadoopContainerDruidClasspath = null;
+
+  @JsonProperty
+  private List<String> loadList;
 
   public boolean searchCurrentClassloader()
   {
     return searchCurrentClassloader;
   }
 
-  public List<String> getCoordinates()
+  public String getDirectory()
   {
-    return coordinates;
+    return directory;
   }
 
-  public String getLocalRepository()
+  public String getHadoopDependenciesDir()
   {
-    return localRepository;
+    return hadoopDependenciesDir;
   }
 
-  public List<String> getRemoteRepositories()
+  public String getHadoopContainerDruidClasspath()
   {
-    return remoteRepositories;
+    return hadoopContainerDruidClasspath;
+  }
+
+  public List<String> getLoadList()
+  {
+    return loadList;
   }
 
   @Override
@@ -73,9 +74,10 @@ public class ExtensionsConfig
   {
     return "ExtensionsConfig{" +
            "searchCurrentClassloader=" + searchCurrentClassloader +
-           ", coordinates=" + coordinates +
-           ", localRepository='" + localRepository + '\'' +
-           ", remoteRepositories=" + remoteRepositories +
+           ", directory='" + directory + '\'' +
+           ", hadoopDependenciesDir='" + hadoopDependenciesDir + '\'' +
+           ", hadoopContainerDruidClasspath='" + hadoopContainerDruidClasspath + '\'' +
+           ", loadList=" + loadList +
            '}';
   }
 }

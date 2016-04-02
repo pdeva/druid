@@ -1,20 +1,20 @@
 /*
- * Druid - a distributed column store.
- * Copyright (C) 2014  Metamarkets Group Inc.
+ * Licensed to Metamarkets Group Inc. (Metamarkets) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. Metamarkets licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package io.druid.query;
@@ -29,18 +29,24 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
+import com.metamx.common.ISE;
 import com.metamx.common.Pair;
 import com.metamx.common.guava.Accumulator;
+import com.metamx.common.guava.ResourceClosingSequence;
 import com.metamx.common.guava.Sequence;
 import com.metamx.common.guava.Sequences;
 import com.metamx.common.logger.Logger;
+import io.druid.collections.StupidPool;
 import io.druid.data.input.Row;
 import io.druid.query.groupby.GroupByQuery;
 import io.druid.query.groupby.GroupByQueryConfig;
 import io.druid.query.groupby.GroupByQueryHelper;
 import io.druid.segment.incremental.IncrementalIndex;
 
+import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -55,11 +61,13 @@ public class GroupByParallelQueryRunner<T> implements QueryRunner<T>
   private final ListeningExecutorService exec;
   private final Supplier<GroupByQueryConfig> configSupplier;
   private final QueryWatcher queryWatcher;
+  private final StupidPool<ByteBuffer> bufferPool;
 
   public GroupByParallelQueryRunner(
       ExecutorService exec,
       Supplier<GroupByQueryConfig> configSupplier,
       QueryWatcher queryWatcher,
+      StupidPool<ByteBuffer> bufferPool,
       Iterable<QueryRunner<T>> queryables
   )
   {
@@ -67,23 +75,22 @@ public class GroupByParallelQueryRunner<T> implements QueryRunner<T>
     this.queryWatcher = queryWatcher;
     this.queryables = Iterables.unmodifiableIterable(Iterables.filter(queryables, Predicates.notNull()));
     this.configSupplier = configSupplier;
+    this.bufferPool = bufferPool;
   }
 
   @Override
-  public Sequence<T> run(final Query<T> queryParam)
+  public Sequence<T> run(final Query<T> queryParam, final Map<String, Object> responseContext)
   {
     final GroupByQuery query = (GroupByQuery) queryParam;
     final Pair<IncrementalIndex, Accumulator<IncrementalIndex, T>> indexAccumulatorPair = GroupByQueryHelper.createIndexAccumulatorPair(
         query,
-        configSupplier.get()
+        configSupplier.get(),
+        bufferPool
     );
-    final Pair<List, Accumulator<List, T>> bySegmentAccumulatorPair = GroupByQueryHelper.createBySegmentAccumulatorPair();
-    final boolean bySegment = query.getContextBySegment(false);
-    final int priority = query.getContextPriority(0);
+    final Pair<Queue, Accumulator<Queue, T>> bySegmentAccumulatorPair = GroupByQueryHelper.createBySegmentAccumulatorPair();
+    final boolean bySegment = BaseQuery.getContextBySegment(query, false);
+    final int priority = BaseQuery.getContextPriority(query, 0);
 
-    if (Iterables.isEmpty(queryables)) {
-      log.warn("No queryables found.");
-    }
     ListenableFuture<List<Void>> futures = Futures.allAsList(
         Lists.newArrayList(
             Iterables.transform(
@@ -93,6 +100,10 @@ public class GroupByParallelQueryRunner<T> implements QueryRunner<T>
                   @Override
                   public ListenableFuture<Void> apply(final QueryRunner<T> input)
                   {
+                    if (input == null) {
+                      throw new ISE("Null queryRunner! Looks to be some segment unmapping action happening");
+                    }
+
                     return exec.submit(
                         new AbstractPrioritizedCallable<Void>(priority)
                         {
@@ -101,10 +112,11 @@ public class GroupByParallelQueryRunner<T> implements QueryRunner<T>
                           {
                             try {
                               if (bySegment) {
-                                input.run(queryParam)
+                                input.run(queryParam, responseContext)
                                      .accumulate(bySegmentAccumulatorPair.lhs, bySegmentAccumulatorPair.rhs);
                               } else {
-                                input.run(queryParam).accumulate(indexAccumulatorPair.lhs, indexAccumulatorPair.rhs);
+                                input.run(queryParam, responseContext)
+                                     .accumulate(indexAccumulatorPair.lhs, indexAccumulatorPair.rhs);
                               }
 
                               return null;
@@ -128,7 +140,7 @@ public class GroupByParallelQueryRunner<T> implements QueryRunner<T>
     // Let the runners complete
     try {
       queryWatcher.registerQuery(query, futures);
-      final Number timeout = query.getContextValue("timeout", (Number) null);
+      final Number timeout = query.getContextValue(QueryContextKeys.TIMEOUT, (Number) null);
       if (timeout == null) {
         futures.get();
       } else {
@@ -138,17 +150,21 @@ public class GroupByParallelQueryRunner<T> implements QueryRunner<T>
     catch (InterruptedException e) {
       log.warn(e, "Query interrupted, cancelling pending results, query id [%s]", query.getId());
       futures.cancel(true);
-      throw new QueryInterruptedException("Query interrupted");
+      indexAccumulatorPair.lhs.close();
+      throw new QueryInterruptedException(e);
     }
     catch (CancellationException e) {
-      throw new QueryInterruptedException("Query cancelled");
+      indexAccumulatorPair.lhs.close();
+      throw new QueryInterruptedException(e);
     }
     catch (TimeoutException e) {
+      indexAccumulatorPair.lhs.close();
       log.info("Query timeout, cancelling pending results for query id [%s]", query.getId());
       futures.cancel(true);
-      throw new QueryInterruptedException("Query timeout");
+      throw new QueryInterruptedException(e);
     }
     catch (ExecutionException e) {
+      indexAccumulatorPair.lhs.close();
       throw Throwables.propagate(e.getCause());
     }
 
@@ -156,18 +172,20 @@ public class GroupByParallelQueryRunner<T> implements QueryRunner<T>
       return Sequences.simple(bySegmentAccumulatorPair.lhs);
     }
 
-    return Sequences.simple(
-        Iterables.transform(
-            indexAccumulatorPair.lhs.iterableWithPostAggregations(null),
-            new Function<Row, T>()
-            {
-              @Override
-              public T apply(Row input)
-              {
-                return (T) input;
-              }
-            }
-        )
+    return new ResourceClosingSequence<T>(
+        Sequences.simple(
+            Iterables.transform(
+                indexAccumulatorPair.lhs.iterableWithPostAggregations(null, query.isDescending()),
+                new Function<Row, T>()
+                {
+                  @Override
+                  public T apply(Row input)
+                  {
+                    return (T) input;
+                  }
+                }
+            )
+        ), indexAccumulatorPair.lhs
     );
   }
 }

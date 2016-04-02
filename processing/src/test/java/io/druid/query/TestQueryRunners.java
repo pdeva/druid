@@ -1,7 +1,25 @@
+/*
+ * Licensed to Metamarkets Group Inc. (Metamarkets) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. Metamarkets licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package io.druid.query;
 
 import com.google.common.base.Supplier;
-import com.google.common.util.concurrent.ListenableFuture;
 import io.druid.collections.StupidPool;
 import io.druid.query.search.SearchQueryQueryToolChest;
 import io.druid.query.search.SearchQueryRunnerFactory;
@@ -27,11 +45,10 @@ public class TestQueryRunners
         @Override
         public ByteBuffer get()
         {
-          return ByteBuffer.allocate(1024 * 10);
+          return ByteBuffer.allocate(1024 * 1024 * 10);
         }
       }
   );
-
   public static final TopNQueryConfig topNConfig = new TopNQueryConfig();
 
   public static StupidPool<ByteBuffer> getPool()
@@ -45,7 +62,8 @@ public class TestQueryRunners
   {
     QueryRunnerFactory factory = new TopNQueryRunnerFactory(
         pool,
-        new TopNQueryQueryToolChest(topNConfig),
+        new TopNQueryQueryToolChest(topNConfig,
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()),
         QueryRunnerTestHelper.NOOP_QUERYWATCHER
     );
     return new FinalizeResultsQueryRunner<T>(
@@ -59,7 +77,8 @@ public class TestQueryRunners
   )
   {
     QueryRunnerFactory factory = new TimeseriesQueryRunnerFactory(
-        new TimeseriesQueryQueryToolChest(new QueryConfig()),
+        new TimeseriesQueryQueryToolChest(
+            QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()),
         new TimeseriesQueryEngine(),
         QueryRunnerTestHelper.NOOP_QUERYWATCHER
     );
@@ -74,7 +93,10 @@ public class TestQueryRunners
       Segment adapter
   )
   {
-    QueryRunnerFactory factory = new SearchQueryRunnerFactory(new SearchQueryQueryToolChest(new SearchQueryConfig()), QueryRunnerTestHelper.NOOP_QUERYWATCHER);
+    QueryRunnerFactory factory = new SearchQueryRunnerFactory(new SearchQueryQueryToolChest(
+          new SearchQueryConfig(),
+          QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator()),
+        QueryRunnerTestHelper.NOOP_QUERYWATCHER);
     return new FinalizeResultsQueryRunner<T>(
         factory.createRunner(adapter),
         factory.getToolchest()

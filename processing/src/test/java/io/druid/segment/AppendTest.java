@@ -1,20 +1,20 @@
 /*
- * Druid - a distributed column store.
- * Copyright (C) 2012, 2013  Metamarkets Group Inc.
+ * Licensed to Metamarkets Group Inc. (Metamarkets) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. Metamarkets licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package io.druid.segment;
@@ -30,9 +30,9 @@ import io.druid.query.Result;
 import io.druid.query.TestQueryRunners;
 import io.druid.query.aggregation.AggregatorFactory;
 import io.druid.query.aggregation.CountAggregatorFactory;
+import io.druid.query.aggregation.DoubleMaxAggregatorFactory;
+import io.druid.query.aggregation.DoubleMinAggregatorFactory;
 import io.druid.query.aggregation.DoubleSumAggregatorFactory;
-import io.druid.query.aggregation.MaxAggregatorFactory;
-import io.druid.query.aggregation.MinAggregatorFactory;
 import io.druid.query.aggregation.PostAggregator;
 import io.druid.query.aggregation.hyperloglog.HyperUniquesAggregatorFactory;
 import io.druid.query.aggregation.post.ArithmeticPostAggregator;
@@ -54,6 +54,7 @@ import io.druid.query.topn.TopNResultValue;
 import org.joda.time.DateTime;
 import org.joda.time.Interval;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -63,6 +64,7 @@ import java.util.Map;
 
 /**
  */
+@Ignore
 public class AppendTest
 {
   private static final AggregatorFactory[] METRIC_AGGS = new AggregatorFactory[]{
@@ -79,7 +81,7 @@ public class AppendTest
   final QueryGranularity allGran = QueryGranularity.ALL;
   final String dimensionValue = "dimension";
   final String valueValue = "value";
-  final String providerDimension = "provider";
+  final String marketDimension = "market";
   final String qualityDimension = "quality";
   final String placementDimension = "placement";
   final String placementishDimension = "placementish";
@@ -87,7 +89,7 @@ public class AppendTest
   final CountAggregatorFactory rowsCount = new CountAggregatorFactory("rows");
   final DoubleSumAggregatorFactory indexDoubleSum = new DoubleSumAggregatorFactory("index", "index");
   final HyperUniquesAggregatorFactory uniques = new HyperUniquesAggregatorFactory("uniques", "quality_uniques");
-  final ConstantPostAggregator constant = new ConstantPostAggregator("const", 1L, null);
+  final ConstantPostAggregator constant = new ConstantPostAggregator("const", 1L);
   final FieldAccessPostAggregator rowsPostAgg = new FieldAccessPostAggregator("rows", "rows");
   final FieldAccessPostAggregator indexPostAgg = new FieldAccessPostAggregator("index", "index");
   final ArithmeticPostAggregator addRowsIndexConstant =
@@ -177,7 +179,8 @@ public class AppendTest
                                     .dataSource(dataSource)
                                     .build();
     QueryRunner runner = TestQueryRunners.makeTimeBoundaryQueryRunner(segment);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -201,7 +204,8 @@ public class AppendTest
                                     .dataSource(dataSource)
                                     .build();
     QueryRunner runner = TestQueryRunners.makeTimeBoundaryQueryRunner(segment2);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -225,7 +229,8 @@ public class AppendTest
 
     TimeseriesQuery query = makeTimeseriesQuery();
     QueryRunner runner = TestQueryRunners.makeTimeSeriesQueryRunner(segment);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -249,7 +254,8 @@ public class AppendTest
 
     TimeseriesQuery query = makeTimeseriesQuery();
     QueryRunner runner = TestQueryRunners.makeTimeSeriesQueryRunner(segment2);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -273,7 +279,8 @@ public class AppendTest
 
     TimeseriesQuery query = makeFilteredTimeseriesQuery();
     QueryRunner runner = TestQueryRunners.makeTimeSeriesQueryRunner(segment);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -297,7 +304,8 @@ public class AppendTest
 
     TimeseriesQuery query = makeFilteredTimeseriesQuery();
     QueryRunner runner = TestQueryRunners.makeTimeSeriesQueryRunner(segment2);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -309,7 +317,7 @@ public class AppendTest
             new TopNResultValue(
                 Arrays.<Map<String, Object>>asList(
                     ImmutableMap.<String, Object>builder()
-                                .put("provider", "spot")
+                                .put("market", "spot")
                                 .put("rows", 3L)
                                 .put("index", 300.0D)
                                 .put("addRowsIndexConstant", 304.0D)
@@ -319,7 +327,7 @@ public class AppendTest
                                 .build(),
                     new HashMap<String, Object>()
                     {{
-                        put("provider", null);
+                        put("market", null);
                         put("rows", 3L);
                         put("index", 200.0D);
                         put("addRowsIndexConstant", 204.0D);
@@ -328,7 +336,7 @@ public class AppendTest
                         put("minIndex", 0.0);
                       }},
                     ImmutableMap.<String, Object>builder()
-                                .put("provider", "total_market")
+                                .put("market", "total_market")
                                 .put("rows", 2L)
                                 .put("index", 200.0D)
                                 .put("addRowsIndexConstant", 203.0D)
@@ -343,7 +351,8 @@ public class AppendTest
 
     TopNQuery query = makeTopNQuery();
     QueryRunner runner = TestQueryRunners.makeTopNQueryRunner(segment);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -355,7 +364,7 @@ public class AppendTest
             new TopNResultValue(
                 Arrays.<Map<String, Object>>asList(
                     ImmutableMap.<String, Object>builder()
-                                .put("provider", "total_market")
+                                .put("market", "total_market")
                                 .put("rows", 3L)
                                 .put("index", 300.0D)
                                 .put("addRowsIndexConstant", 304.0D)
@@ -365,7 +374,7 @@ public class AppendTest
                                 .build(),
                     new HashMap<String, Object>()
                     {{
-                        put("provider", null);
+                        put("market", null);
                         put("rows", 3L);
                         put("index", 100.0D);
                         put("addRowsIndexConstant", 104.0D);
@@ -374,7 +383,7 @@ public class AppendTest
                         put("minIndex", 0.0);
                       }},
                     ImmutableMap.<String, Object>builder()
-                                .put("provider", "spot")
+                                .put("market", "spot")
                                 .put("rows", 1L)
                                 .put("index", 100.0D)
                                 .put("addRowsIndexConstant", 102.0D)
@@ -389,7 +398,8 @@ public class AppendTest
 
     TopNQuery query = makeTopNQuery();
     QueryRunner runner = TestQueryRunners.makeTopNQueryRunner(segment2);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -401,7 +411,7 @@ public class AppendTest
             new TopNResultValue(
                 Arrays.<Map<String, Object>>asList(
                     ImmutableMap.<String, Object>builder()
-                                .put("provider", "spot")
+                                .put("market", "spot")
                                 .put("rows", 1L)
                                 .put("index", 100.0D)
                                 .put("addRowsIndexConstant", 102.0D)
@@ -416,7 +426,8 @@ public class AppendTest
 
     TopNQuery query = makeFilteredTopNQuery();
     QueryRunner runner = TestQueryRunners.makeTopNQueryRunner(segment);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -433,7 +444,8 @@ public class AppendTest
 
     TopNQuery query = makeFilteredTopNQuery();
     QueryRunner runner = TestQueryRunners.makeTopNQueryRunner(segment2);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -447,7 +459,7 @@ public class AppendTest
                     new SearchHit(placementishDimension, "a"),
                     new SearchHit(qualityDimension, "automotive"),
                     new SearchHit(placementDimension, "mezzanine"),
-                    new SearchHit(providerDimension, "total_market")
+                    new SearchHit(marketDimension, "total_market")
                 )
             )
         )
@@ -455,7 +467,8 @@ public class AppendTest
 
     SearchQuery query = makeSearchQuery();
     QueryRunner runner = TestQueryRunners.makeSearchQueryRunner(segment);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -468,7 +481,7 @@ public class AppendTest
                 Arrays.<SearchHit>asList(
                     new SearchHit(placementishDimension, "a"),
                     new SearchHit(placementDimension, "mezzanine"),
-                    new SearchHit(providerDimension, "total_market")
+                    new SearchHit(marketDimension, "total_market")
                 )
             )
         )
@@ -476,7 +489,8 @@ public class AppendTest
 
     SearchQuery query = makeSearchQuery();
     QueryRunner runner = TestQueryRunners.makeSearchQueryRunner(segment2);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -488,7 +502,7 @@ public class AppendTest
             new SearchResultValue(
                 Arrays.<SearchHit>asList(
                     new SearchHit(placementDimension, "mezzanine"),
-                    new SearchHit(providerDimension, "total_market")
+                    new SearchHit(marketDimension, "total_market")
                 )
             )
         )
@@ -496,7 +510,8 @@ public class AppendTest
 
     SearchQuery query = makeFilteredSearchQuery();
     QueryRunner runner = TestQueryRunners.makeSearchQueryRunner(segment);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -509,7 +524,7 @@ public class AppendTest
                 Arrays.<SearchHit>asList(
                     new SearchHit(placementishDimension, "a"),
                     new SearchHit(placementDimension, "mezzanine"),
-                    new SearchHit(providerDimension, "total_market")
+                    new SearchHit(marketDimension, "total_market")
                 )
             )
         )
@@ -517,7 +532,8 @@ public class AppendTest
 
     SearchQuery query = makeFilteredSearchQuery();
     QueryRunner runner = TestQueryRunners.makeSearchQueryRunner(segment2);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   @Test
@@ -543,14 +559,14 @@ public class AppendTest
                                   .dataSource(dataSource)
                                   .granularity(allGran)
                                   .intervals(fullOnInterval)
-                                  .filters(providerDimension, "breakstuff")
+                                  .filters(marketDimension, "breakstuff")
                                   .aggregators(
                                       Lists.<AggregatorFactory>newArrayList(
                                           Iterables.concat(
                                               commonAggregators,
                                               Lists.newArrayList(
-                                                  new MaxAggregatorFactory("maxIndex", "index"),
-                                                  new MinAggregatorFactory("minIndex", "index")
+                                                  new DoubleMaxAggregatorFactory("maxIndex", "index"),
+                                                  new DoubleMinAggregatorFactory("minIndex", "index")
                                               )
                                           )
                                       )
@@ -558,7 +574,8 @@ public class AppendTest
                                   .postAggregators(Arrays.<PostAggregator>asList(addRowsIndexConstant))
                                   .build();
     QueryRunner runner = TestQueryRunners.makeTimeSeriesQueryRunner(segment3);
-    TestHelper.assertExpectedResults(expectedResults, runner.run(query));
+    HashMap<String,Object> context = new HashMap<String, Object>();
+    TestHelper.assertExpectedResults(expectedResults, runner.run(query, context));
   }
 
   private TimeseriesQuery makeTimeseriesQuery()
@@ -572,8 +589,8 @@ public class AppendTest
                          Iterables.concat(
                              commonAggregators,
                              Lists.newArrayList(
-                                 new MaxAggregatorFactory("maxIndex", "index"),
-                                 new MinAggregatorFactory("minIndex", "index")
+                                 new DoubleMaxAggregatorFactory("maxIndex", "index"),
+                                 new DoubleMinAggregatorFactory("minIndex", "index")
                              )
                          )
                      )
@@ -593,11 +610,11 @@ public class AppendTest
                            .fields(
                                Arrays.<DimFilter>asList(
                                    Druids.newSelectorDimFilterBuilder()
-                                         .dimension(providerDimension)
+                                         .dimension(marketDimension)
                                          .value("spot")
                                          .build(),
                                    Druids.newSelectorDimFilterBuilder()
-                                         .dimension(providerDimension)
+                                         .dimension(marketDimension)
                                          .value("total_market")
                                          .build()
                                )
@@ -608,8 +625,8 @@ public class AppendTest
                          Iterables.concat(
                              commonAggregators,
                              Lists.newArrayList(
-                                 new MaxAggregatorFactory("maxIndex", "index"),
-                                 new MinAggregatorFactory("minIndex", "index")
+                                 new DoubleMaxAggregatorFactory("maxIndex", "index"),
+                                 new DoubleMinAggregatorFactory("minIndex", "index")
                              )
                          )
                      )
@@ -623,7 +640,7 @@ public class AppendTest
     return new TopNQueryBuilder()
         .dataSource(dataSource)
         .granularity(allGran)
-        .dimension(providerDimension)
+        .dimension(marketDimension)
         .metric(indexMetric)
         .threshold(3)
         .intervals(fullOnInterval)
@@ -632,8 +649,8 @@ public class AppendTest
                 Iterables.concat(
                     commonAggregators,
                     Lists.newArrayList(
-                        new MaxAggregatorFactory("maxIndex", "index"),
-                        new MinAggregatorFactory("minIndex", "index")
+                        new DoubleMaxAggregatorFactory("maxIndex", "index"),
+                        new DoubleMinAggregatorFactory("minIndex", "index")
                     )
                 )
             )
@@ -647,7 +664,7 @@ public class AppendTest
     return new TopNQueryBuilder()
         .dataSource(dataSource)
         .granularity(allGran)
-        .dimension(providerDimension)
+        .dimension(marketDimension)
         .metric(indexMetric)
         .threshold(3)
         .filters(
@@ -655,7 +672,7 @@ public class AppendTest
                   .fields(
                       Arrays.<DimFilter>asList(
                           Druids.newSelectorDimFilterBuilder()
-                                .dimension(providerDimension)
+                                .dimension(marketDimension)
                                 .value("spot")
                                 .build(),
                           Druids.newSelectorDimFilterBuilder()
@@ -671,8 +688,8 @@ public class AppendTest
                 Iterables.concat(
                     commonAggregators,
                     Lists.newArrayList(
-                        new MaxAggregatorFactory("maxIndex", "index"),
-                        new MinAggregatorFactory("minIndex", "index")
+                        new DoubleMaxAggregatorFactory("maxIndex", "index"),
+                        new DoubleMinAggregatorFactory("minIndex", "index")
                     )
                 )
             )
@@ -699,7 +716,7 @@ public class AppendTest
                      Druids.newNotDimFilterBuilder()
                            .field(
                                Druids.newSelectorDimFilterBuilder()
-                                     .dimension(providerDimension)
+                                     .dimension(marketDimension)
                                      .value("spot")
                                      .build()
                            ).build()

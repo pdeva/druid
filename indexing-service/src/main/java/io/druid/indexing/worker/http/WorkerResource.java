@@ -1,36 +1,37 @@
 /*
- * Druid - a distributed column store.
- * Copyright (C) 2012, 2013  Metamarkets Group Inc.
+ * Licensed to Metamarkets Group Inc. (Metamarkets) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. Metamarkets licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package io.druid.indexing.worker.http;
 
-import com.google.api.client.util.Lists;
 import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.io.InputSupplier;
+import com.google.common.collect.Lists;
+import com.google.common.io.ByteSource;
 import com.google.inject.Inject;
 import com.metamx.common.logger.Logger;
-import io.druid.indexing.overlord.ForkingTaskRunner;
+import io.druid.indexing.overlord.TaskRunner;
 import io.druid.indexing.overlord.TaskRunnerWorkItem;
 import io.druid.indexing.worker.Worker;
 import io.druid.indexing.worker.WorkerCuratorCoordinator;
+import io.druid.tasklogs.TaskLogStreamer;
 
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.GET;
@@ -39,8 +40,9 @@ import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
+import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import java.io.InputStream;
+import java.io.IOException;
 
 /**
  */
@@ -51,20 +53,18 @@ public class WorkerResource
   private static String DISABLED_VERSION = "";
 
   private final Worker enabledWorker;
-  private final Worker disabledWorker;
   private final WorkerCuratorCoordinator curatorCoordinator;
-  private final ForkingTaskRunner taskRunner;
+  private final TaskRunner taskRunner;
 
   @Inject
   public WorkerResource(
       Worker worker,
       WorkerCuratorCoordinator curatorCoordinator,
-      ForkingTaskRunner taskRunner
+      TaskRunner taskRunner
 
   ) throws Exception
   {
     this.enabledWorker = worker;
-    this.disabledWorker = new Worker(worker.getHost(), worker.getIp(), worker.getCapacity(), DISABLED_VERSION);
     this.curatorCoordinator = curatorCoordinator;
     this.taskRunner = taskRunner;
   }
@@ -72,10 +72,16 @@ public class WorkerResource
 
   @POST
   @Path("/disable")
-  @Produces("application/json")
+  @Produces(MediaType.APPLICATION_JSON)
   public Response doDisable()
   {
     try {
+      final Worker disabledWorker = new Worker(
+          enabledWorker.getHost(),
+          enabledWorker.getIp(),
+          enabledWorker.getCapacity(),
+          DISABLED_VERSION
+      );
       curatorCoordinator.updateWorkerAnnouncement(disabledWorker);
       return Response.ok(ImmutableMap.of(disabledWorker.getHost(), "disabled")).build();
     }
@@ -86,7 +92,7 @@ public class WorkerResource
 
   @POST
   @Path("/enable")
-  @Produces("application/json")
+  @Produces(MediaType.APPLICATION_JSON)
   public Response doEnable()
   {
     try {
@@ -100,7 +106,7 @@ public class WorkerResource
 
   @GET
   @Path("/enabled")
-  @Produces("application/json")
+  @Produces(MediaType.APPLICATION_JSON)
   public Response isEnabled()
   {
     try {
@@ -115,7 +121,7 @@ public class WorkerResource
 
   @GET
   @Path("/tasks")
-  @Produces("application/json")
+  @Produces(MediaType.APPLICATION_JSON)
   public Response getTasks()
   {
     try {
@@ -142,7 +148,7 @@ public class WorkerResource
 
   @POST
   @Path("/task/{taskid}/shutdown")
-  @Produces("application/json")
+  @Produces(MediaType.APPLICATION_JSON)
   public Response doShutdown(@PathParam("taskid") String taskid)
   {
     try {
@@ -163,18 +169,26 @@ public class WorkerResource
       @QueryParam("offset") @DefaultValue("0") long offset
   )
   {
-    final Optional<InputSupplier<InputStream>> stream = taskRunner.streamTaskLog(taskid, offset);
+    if (!(taskRunner instanceof TaskLogStreamer)) {
+      return Response.status(501)
+                     .entity(String.format(
+                         "Log streaming not supported by [%s]",
+                         taskRunner.getClass().getCanonicalName()
+                     ))
+                     .build();
+    }
+    try {
+      final Optional<ByteSource> stream = ((TaskLogStreamer) taskRunner).streamTaskLog(taskid, offset);
 
-    if (stream.isPresent()) {
-      try {
-        return Response.ok(stream.get().getInput()).build();
+      if (stream.isPresent()) {
+        return Response.ok(stream.get().openStream()).build();
+      } else {
+        return Response.status(Response.Status.NOT_FOUND).build();
       }
-      catch (Exception e) {
-        log.warn(e, "Failed to read log for task: %s", taskid);
-        return Response.serverError().build();
-      }
-    } else {
-      return Response.status(Response.Status.NOT_FOUND).build();
+    }
+    catch (IOException e) {
+      log.warn(e, "Failed to read log for task: %s", taskid);
+      return Response.serverError().build();
     }
   }
 }

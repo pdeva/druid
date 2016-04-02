@@ -1,33 +1,34 @@
 /*
- * Druid - a distributed column store.
- * Copyright (C) 2012, 2013  Metamarkets Group Inc.
+ * Licensed to Metamarkets Group Inc. (Metamarkets) under one
+ * or more contributor license agreements. See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership. Metamarkets licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 
 package io.druid.segment.indexing.granularity;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.api.client.util.Lists;
 import com.google.common.base.Optional;
 import com.google.common.collect.Iterators;
+import com.google.common.collect.Lists;
 import com.google.common.collect.PeekingIterator;
 import com.google.common.collect.Sets;
 import com.metamx.common.Granularity;
 import com.metamx.common.guava.Comparators;
+import io.druid.common.utils.JodaUtils;
 import io.druid.granularity.QueryGranularity;
 import org.joda.time.DateTime;
 import org.joda.time.Interval;
@@ -49,6 +50,10 @@ public class ArbitraryGranularitySpec implements GranularitySpec
   {
     this.queryGranularity = queryGranularity;
     this.intervals = Sets.newTreeSet(Comparators.intervalsByStartThenEnd());
+
+    if (inputIntervals == null) {
+      inputIntervals = Lists.newArrayList();
+    }
 
     // Insert all intervals
     for (final Interval inputInterval : inputIntervals) {
@@ -86,7 +91,7 @@ public class ArbitraryGranularitySpec implements GranularitySpec
   public Optional<Interval> bucketInterval(DateTime dt)
   {
     // First interval with start time ≤ dt
-    final Interval interval = intervals.floor(new Interval(dt, new DateTime(Long.MAX_VALUE)));
+    final Interval interval = intervals.floor(new Interval(dt, new DateTime(JodaUtils.MAX_INSTANT)));
 
     if (interval != null && interval.contains(dt)) {
       return Optional.of(interval);
@@ -109,11 +114,31 @@ public class ArbitraryGranularitySpec implements GranularitySpec
   }
 
   @Override
-  public GranularitySpec withQueryGranularity(QueryGranularity queryGranularity)
+  public boolean equals(Object o)
   {
-    return new ArbitraryGranularitySpec(
-        queryGranularity,
-        Lists.newArrayList(intervals)
-    );
+    if (this == o) {
+      return true;
+    }
+    if (o == null || getClass() != o.getClass()) {
+      return false;
+    }
+
+    ArbitraryGranularitySpec that = (ArbitraryGranularitySpec) o;
+
+    if (!intervals.equals(that.intervals)) {
+      return false;
+    }
+    return !(queryGranularity != null
+             ? !queryGranularity.equals(that.queryGranularity)
+             : that.queryGranularity != null);
+
+  }
+
+  @Override
+  public int hashCode()
+  {
+    int result = intervals.hashCode();
+    result = 31 * result + (queryGranularity != null ? queryGranularity.hashCode() : 0);
+    return result;
   }
 }
